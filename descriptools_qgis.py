@@ -31,7 +31,12 @@ import numpy
 import sys
 # sys.path.insert(1, 'C:/Users/jose/AppData/Roaming/QGIS/QGIS3/profiles/default/python/plugins/descriptools_qgis/descriptools-master/descriptools')
 sys.path.insert(1, 'C:/Users/jose/AppData/Roaming/QGIS/QGIS3/profiles/default/python/plugins/descriptools_qgis/descriptools-master/')
+import descriptools.topoindexes as topoindexes
+import descriptools.downslope as downslope
+import descriptools.slope as slope
 import descriptools.flowhand as flowhand
+import descriptools.gfi as gfi
+import descriptools.evaluation as evaluation
 
 # Initialize Qt resources from file resources.py
 from .resources import *
@@ -188,12 +193,19 @@ class descriptoolsQgis:
             self.iface.removeToolBarIcon(action)
 
     def select_output_file(self):
-        # filename, _filter = QFileDialog.getSaveFileName(
-        #     self.dlg, "Select   output file ","", '*.csv')
-        # self.dlg.lineEdit.setText(filename)
         filepath = QFileDialog.getExistingDirectory(
             self.dlg, "Select output path ","")
         self.dlg.lineEdit.setText(filepath)
+
+    def export_descriptor(self, descriptor, path, cols, rows, geotransform, projection, nodata):
+        print("Creating file at: ", path)
+        raster = gdal.GetDriverByName('GTiff').Create(path, cols, rows, 1, gdal.GDT_Float32)
+        out_band = raster.GetRasterBand(1)
+        out_band.WriteArray(descriptor, 0, 0)
+        out_band.FlushCache()
+        out_band.SetNoDataValue(nodata) #nodata
+        raster.SetGeoTransform(geotransform)
+        raster.SetProjection(projection)
 
     def run(self):
         """Run method that performs all the real work"""
@@ -232,185 +244,113 @@ class descriptoolsQgis:
             selectedFacLayerIndex = self.dlg.comboBox_3.currentIndex()
             selectedFacLayer = layers[selectedFacLayerIndex].layer()
             
-            # teste = [layer.source() for layer in QgsProject.instance().mapLayers().values()]
-            
-            print(selectedDemLayer.source())
-            print(selectedFdrLayer.source())
-            print(selectedFacLayer.source())
-
+            # Open input data in GDAL
             ds_dem = gdal.Open(selectedDemLayer.source(), GA_ReadOnly)
             ds_fdr = gdal.Open(selectedFdrLayer.source(), GA_ReadOnly)
             ds_fac = gdal.Open(selectedFacLayer.source(), GA_ReadOnly)
 
-            # DEM_array = self.convertRasterToNumpyArray(selectedLayer)
-
+            # Get matrix from input
             DEM = ds_dem.GetRasterBand(1).ReadAsArray()
             FDR = ds_fdr.GetRasterBand(1).ReadAsArray()
             FAC = ds_fac.GetRasterBand(1).ReadAsArray()
 
+            # Get width and height from reference raster
             cols = ds_dem.RasterXSize# number of columns
             rows = ds_dem.RasterYSize# number of rows
-            # bands = ds_dem.RasterCount# number of bands
 
+            # Get Geotransform from reference raster
             geotransform = ds_dem.GetGeoTransform()#georeference functions
             originX = geotransform[0]#top left x
             originY = geotransform[3]#top left y
             cellsize = geotransform[5]#pixel resolution
 
-            print("Done")
+            # Get Projection from reference raster
+            projection = ds_dem.GetProjection()
+
+            print("Done with import")
 
 
-            # output_file = 'C:/Users/jose/Desktop/Senai/plugin/teste_hand.tif'
+            # Get output path folder
             output_path = self.dlg.lineEdit.text()
 
-            # output_file_dem = 'C:/Users/jose/Desktop/Senai/plugin/teste_dem.tif'
-            # output_file_fdr = 'C:/Users/jose/Desktop/Senai/plugin/teste_fdr.tif'
-            # output_file_fac = 'C:/Users/jose/Desktop/Senai/plugin/teste_fac.tif'
 
+            ## Prepare auxiliary data
 
-            raster_hand = gdal.GetDriverByName('GTiff').Create(output_path+"/hand.tif", cols, rows, 1, gdal.GDT_Float32)
-
-            # raster_dem = gdal.GetDriverByName('GTiff').Create(output_file_dem, cols, rows, 1, gdal.GDT_Float32)
-            # raster_fdr = gdal.GetDriverByName('GTiff').Create(output_file_fdr, cols, rows, 1, gdal.GDT_Float32)
-            # raster_fac = gdal.GetDriverByName('GTiff').Create(output_file_fac, cols, rows, 1, gdal.GDT_Float32)
-
-
-            river_threshold = self.dlg.doubleSpinBox.value()
-
-            #  x if a > b else y
-            px = cellsize * -1 if cellsize <0 else cellsize
+            # Get pixel value, if checkmark was selected use custom value, otherwise get from reference raster
+            if self.dlg.checkBoxPixelSize.isChecked():
+                # Custom value
+                px = self.dlg.doubleSpinBoxPixel.value()
+            else:
+                # Check in case pixel size is negative
+                px = cellsize * -1 if cellsize <0 else cellsize
             
-            # river = numpy.where(FAC>=(river_threshold*1000*1000/(px*px)), 1, 0).astype('int8') #20km²
+            # Get user river innitiation threshold from spinbox
+            river_threshold = self.dlg.doubleSpinBox.value()
+            # Create river matrix as int8
             river = numpy.where(FAC>=(river_threshold*1000*1000/(90*90)), 1, 0).astype('int8') #20km²
 
-            
-            
+            #Generate array of boolean to check with descriptors to calculate
+            list_to_calculate = [
+                self.dlg.checkBoxSlope.isChecked(),
+                self.dlg.checkBoxDownslope.isChecked(),
+                self.dlg.checkBoxTI.isChecked(),
+                self.dlg.checkBoxMTI.isChecked(),
+                self.dlg.checkBoxHDistance.isChecked(),
+                self.dlg.checkBoxHAND.isChecked(),
+                self.dlg.checkBoxGFI.isChecked(),
+                self.dlg.checkBoxLFI.isChecked()
+            ]
+
             print("river_threshold", river_threshold)
             print("px", px)
             print("fac>value", (river_threshold*1000*1000/(px*px)))
             print("outpath",output_path)
-            
-            
-            print("Calculating horizontal Flow")
 
-            # flow, indices, hand = flowhand.flow_hand_index(DEM,FDR,river,px)
-            # flow, indices = flowhand.flow_distance_indexes_sequential(FDR,river,px)
-            flow, indices = flowhand.fdist_indexes_sequential_jit(FDR,river,px)
+            print("Starting calculations")
 
-            print("Calculating HAND")
+            for item in range(0,8,1):
+                descriptor = []
+                file = ''
+                # Skip if false
+                if list_to_calculate[item] == False:
+                    continue
+                if item == 0:
+                    descriptor = slope.slope_sequential_jit(DEM, px)
+                    file = 'slope'
+                elif item == 1:
+                    descriptor = downslope.downslope_sequential_jit(DEM, FDR, px, self.dlg.doubleSpinBox_2.value())
+                    file = 'downslope'
+                elif item == 2:
+                    descriptor = topoindexes.topographic_index_sequential_jit(FAC,slope.slope_sequential_jit(DEM, px),px)
+                    file = 'topographic_index'
+                elif item == 3:
+                    # n = 0.13, 0.08 and 0.05 for 90, 30 and 12.5m
+                    descriptor = topoindexes.modified_topographic_index_sequential_jit(FAC,slope.slope_sequential_jit(DEM, px),px, self.dlg.doubleSpinBox_3.value())
+                    file = 'modified_topographic_index'
+                elif item > 3:
+                    flow, indices = flowhand.fdist_indexes_sequential_jit(FDR,river,px)
+                    if item == 4:
+                        descriptor = flow
+                        file = 'horizontal_distance'
+                    else:
+                        hand = flowhand.hand_calculator(DEM,indices)
+                        if item == 5:
+                            descriptor = hand
+                            file = 'hand'
+                        else:
+                            # b = 0.1 and n = 0.4
+                            if item == 6:
+                                descriptor = gfi.geomorphic_flood_index_sequential_jit(hand, FAC, indices, self.dlg.doubleSpinBox_5.value(), self.dlg.doubleSpinBox_4.value(), px)
+                                file = 'GFI'
+                            if item == 7:
+                                descriptor = gfi.ln_hl_H_sequential_jit(hand, FAC, self.dlg.doubleSpinBox_5.value(), self.dlg.doubleSpinBox_4.value(), px)
+                                file = 'LFI'
+                
+                print("Exporting: ", file)
+                self.export_descriptor(descriptor, output_path + '/' + file + '.TIF', cols, rows, geotransform, projection, -100)
+                print("Done: ", file)
+                print("")
 
-            hand = flowhand.hand_calculator(DEM,indices)
-
-            print("Done")
-
-            # test_matrix_dem = numpy.zeros((rows,cols), numpy.float32)
-            # test_matrix_fdr = numpy.zeros((rows,cols), numpy.float32)
-            # test_matrix_fac = numpy.zeros((rows,cols), numpy.float32)
-            
-            # # test_matrix = numpy.where(DEM == DEM[0,0], 0, DEM)
-
-            # for row in range(0, rows, 1):
-            #     for col in range(0, cols, 1):
-            #         # lesum = rowe + cole
-            #         test_matrix_dem[row][col] = DEM[row][col]
-            #         test_matrix_fdr[row][col] = FDR[row][col]
-            #         test_matrix_fac[row][col] = FAC[row][col]
-
-            # test_matrix_dem = numpy.where(test_matrix_dem < -10, -10, test_matrix_dem)
-            # test_matrix_fdr = numpy.where(test_matrix_fdr < -10, -10, test_matrix_fdr)
-            # test_matrix_fac = numpy.where(test_matrix_fac < -10, -10, test_matrix_fac)
-
-            # # raster.SetProjection(srs.ExportToWkt())
-
-            print("Writing hand")
-
-            out_band = raster_hand.GetRasterBand(1)
-
-            # out_band_dem = raster_dem.GetRasterBand(1)
-            # out_band_fdr = raster_fdr.GetRasterBand(1)
-            # out_band_fac = raster_fac.GetRasterBand(1)
-
-
-            out_band.WriteArray(hand, 0, 0)
-
-            # out_band_dem.WriteArray(test_matrix_dem, 0, 0)
-            # out_band_fdr.WriteArray(test_matrix_fdr, 0, 0)
-            # out_band_fac.WriteArray(test_matrix_fac, 0, 0)
-
-            # # nodata = DEM[0][0]
-
-            # # print("nodata:", nodata)
-
-            out_band.FlushCache()
-
-            # out_band_dem.FlushCache()
-            # out_band_fdr.FlushCache()
-            # out_band_fac.FlushCache()
-            
-            
-            out_band.SetNoDataValue(-100)
-
-            # # out_band.SetNoDataValue(nodata)
-            # out_band_dem.SetNoDataValue(-10)
-            # out_band_fdr.SetNoDataValue(-10)
-            # out_band_fac.SetNoDataValue(-10)
-
-
-            raster_hand.SetGeoTransform(geotransform)
-
-            # raster_dem.SetGeoTransform(geotransform)
-            # raster_fdr.SetGeoTransform(geotransform)
-            # raster_fac.SetGeoTransform(geotransform)
-
-
-            raster_hand.SetProjection(ds_dem.GetProjection())
-
-            # raster_dem.SetProjection(ds_dem.GetProjection())
-            # raster_fdr.SetProjection(ds_dem.GetProjection())
-            # raster_fac.SetProjection(ds_dem.GetProjection())
-
-            print("Finished!")
-
-            # ===========================================
-            # ===========================================
-
-            # self.iface.addRasterLayer(output_file,"teste_output","gdal")
-
-            # tab_label = self.bingrid_to_label(dem)   
-
-            # test_matrix = numpy.array(tab_label, numpy.float32)
-            
-            # test_matrix = dem + 1
-
-            # driver1=gdal.GetDriverByName('GTiff')
-            # driver1.Register()
-
-            # target_ds=driver1.Create("test_file.tif",cols,rows,1,gdal.GDT_Float32)
-            # target_ds.SetGeoTransform(geotransform)
-            # band_target=target_ds.GetRasterBand(1)
-            # band_target.WriteArray(test_matrix)
-            # band_target.FlushCache()
-
-            # projection= ds_dem.GetGeoTransform()
-
-            # file_output= 'a'
-
-            # self.writeOutputGeoTiff(test_matrix, geotransform,projection, rows, cols, file_output)
-            
-
-            # filename = self.dlg.lineEdit.text()
-            # with open(filename, 'w') as output_file:
-                # selectedLayerIndex = self.dlg.comboBox.currentIndex()
-                # selectedLayer = layers[selectedLayerIndex].layer()
-                # print(selectedLayer)
-                # fieldnames = [field.name() for field in selectedLayer.fields()]
-                # # write header
-                # line = ','.join(name for name in fieldnames) + '\n'
-                # output_file.write(line)
-                # # write feature attributes
-                # for f in selectedLayer.getFeatures():
-                #     line = ','.join(str(f[name]) for name in fieldnames) + '\n'
-                #     output_file.write(line)
             # Do something useful here - delete the line containing pass and
             # substitute with your code.
             # pass
