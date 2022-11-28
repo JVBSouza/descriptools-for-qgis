@@ -7,13 +7,13 @@ name=Descriptools for QGIS
 qgisMinimumVersion=3.0
 description=Plugin for terrain descriptor calculation
 version=0.1
-author=Fabiane Dorleles and José Souza
+author=Fabiane Dorneles and José Souza
 email=joseboing@gmail.com
 
-about=The objectivo of this plugin is to allow terrain descriptors calculation
+about=The objective of this plugin is to allow the calculation of eight terrain descriptors: slope, downslope index, topographic index, modified topographic index, horizontal distance to the nearest drainage, vertical distance to the nearest drainage (HAND), geomorphic flood index (GFI) and local flood index (LFI).
 
-tracker=http://bugs
-repository=http://repo
+tracker=https://github.com/JVBSouza/descriptools-for-qgis
+repository=https://github.com/JVBSouza/descriptools-for-qgis
 # End of mandatory metadata
 
 # Recommended items:
@@ -23,9 +23,9 @@ hasProcessingProvider=no
 # changelog=
 
 # Tags are comma separated with spaces allowed
-tags=python
+tags=python, raster, terrain descriptors, geomorphology, hydrology 
 
-homepage=http://homepage
+homepage=https://github.com/JVBSouza/descriptools-for-qgis
 category=Raster
 icon=icon.png
 # experimental flag

@@ -28,15 +28,12 @@ from qgis.core import QgsProject, Qgis
 from osgeo import gdal, osr
 from osgeo.gdalconst import *
 import numpy
-import sys
-# sys.path.insert(1, 'C:/Users/jose/AppData/Roaming/QGIS/QGIS3/profiles/default/python/plugins/descriptools_qgis/descriptools-master/descriptools')
-sys.path.insert(1, 'C:/Users/jose/AppData/Roaming/QGIS/QGIS3/profiles/default/python/plugins/descriptools_qgis/descriptools-master/')
+
 import descriptools.topoindexes as topoindexes
 import descriptools.downslope as downslope
 import descriptools.slope as slope
 import descriptools.flowhand as flowhand
 import descriptools.gfi as gfi
-import descriptools.evaluation as evaluation
 
 # Initialize Qt resources from file resources.py
 from .resources import *
@@ -219,29 +216,32 @@ class descriptoolsQgis:
 
         # Fetch the currently loaded layers
         layers = QgsProject.instance().layerTreeRoot().children()
+
         # Clear the contents of the comboBox from previous runs
-        self.dlg.comboBox.clear()
-        self.dlg.comboBox_2.clear()
-        self.dlg.comboBox_3.clear()
+        self.dlg.comboBoxDem.clear()
+        self.dlg.comboBoxFdr.clear()
+        self.dlg.comboBoxFac.clear()
+        
         # Populate the comboBox with names of all the loaded layers
-        self.dlg.comboBox.addItems([layer.name() for layer in layers])
-        self.dlg.comboBox_2.addItems([layer.name() for layer in layers])
-        self.dlg.comboBox_3.addItems([layer.name() for layer in layers])
+        self.dlg.comboBoxDem.addItems([layer.name() for layer in layers])
+        self.dlg.comboBoxFdr.addItems([layer.name() for layer in layers])
+        self.dlg.comboBoxFac.addItems([layer.name() for layer in layers])
 
         # show the dialog
         self.dlg.show()
         # Run the dialog event loop
         result = self.dlg.exec_()
+
         # See if OK was pressed
         if result:
             print("Retrieving data")
-            selectedDemLayerIndex = self.dlg.comboBox.currentIndex()
+            selectedDemLayerIndex = self.dlg.comboBoxDem.currentIndex()
             selectedDemLayer = layers[selectedDemLayerIndex].layer()
 
-            selectedFdrLayerIndex = self.dlg.comboBox_2.currentIndex()
+            selectedFdrLayerIndex = self.dlg.comboBoxFdr.currentIndex()
             selectedFdrLayer = layers[selectedFdrLayerIndex].layer()
 
-            selectedFacLayerIndex = self.dlg.comboBox_3.currentIndex()
+            selectedFacLayerIndex = self.dlg.comboBoxFac.currentIndex()
             selectedFacLayer = layers[selectedFacLayerIndex].layer()
             
             # Open input data in GDAL
@@ -345,7 +345,6 @@ class descriptoolsQgis:
                             if item == 7:
                                 descriptor = gfi.ln_hl_H_sequential_jit(hand, FAC, self.dlg.doubleSpinBox_5.value(), self.dlg.doubleSpinBox_4.value(), px)
                                 file = 'LFI'
-                
                 print("Exporting: ", file)
                 self.export_descriptor(descriptor, output_path + '/' + file + '.TIF', cols, rows, geotransform, projection, -100)
                 print("Done: ", file)
